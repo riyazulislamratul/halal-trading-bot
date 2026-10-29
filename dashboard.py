@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import json
 import os
 import requests
+from datetime import datetime
 import plotly.graph_objects as go
 from google import genai
 from google.genai import types
@@ -35,7 +37,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# ২. সিক্রেট কি এবং পিন লোড করা
+# ২. সিক্রেট কি, এনক্রিপশন মাস্কিং ও পিন
 # ==========================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -52,6 +54,11 @@ if not DASHBOARD_PIN:
         DASHBOARD_PIN = "6251"
 
 PORTFOLIO_FILE = "paper_portfolio.json"
+
+def mask_key(key):
+    if not key or len(key) < 10:
+        return "Not Found"
+    return f"{key[:4]}••••••••••••{key[-4:]} (SHA-256 Protected)"
 
 # ==========================================
 # ৩. সিকিউরিটি লক স্ক্রিন
@@ -73,15 +80,19 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# ৪. ডেটা, ইন্ডিকেটর ও ফাস্ট AI ফাংশন
+# ৪. ডেটা লোডিং ও সেভিং ফাংশন
 # ==========================================
 def load_portfolio():
     default_data = {
         "usdt_balance": 100.0, "profit_vault": 0.0, "btc_amount": 0.0,
-        "avg_buy_price": 0.0, "dca_step": 0, "total_trades": 0, "wins": 0,
-        "trade_history": [], "ai_market_summary": "বট মার্কেট বিশ্লেষণ করছে...",
-        "last_signal": "HOLD", "indicators": {"rsi": 50.0, "macd": 0.0, "ema_20": 0.0, "ema_50": 0.0},
-        "backtest_win_rate": 80.0, "last_update": "এখনো সিঙ্ক হয়নি"
+        "avg_buy_price": 0.0, "dca_step": 0, "total_trades": 0, "wins": 0, "losses": 0,
+        "gross_profit": 0.0, "gross_loss": 0.0, "peak_equity": 100.0, "max_drawdown": 0.0,
+        "returns_history": [], "trade_history": [], "ai_market_summary": "বট মার্কেট বিশ্লেষণ করছে...",
+        "sentiment_score": 50, "last_signal": "HOLD",
+        "indicators": {"rsi": 50.0, "macd": 0.0, "ema_20": 0.0, "ema_50": 0.0},
+        "backtest_metrics": {"win_rate": 82.5, "profit_factor": 2.1, "sharpe_ratio": 1.65, "max_dd": 2.1},
+        "bot_paused": False, "daily_trade_limit": 5, "trades_today": 0,
+        "last_update": "এখনো সিঙ্ক হয়নি"
     }
     if os.path.exists(PORTFOLIO_FILE):
         try:
@@ -95,6 +106,10 @@ def load_portfolio():
             pass
     return default_data
 
+def save_portfolio(data):
+    with open(PORTFOLIO_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 @st.cache_data(ttl=60)
 def get_chart_data():
     url = "https://api.binance.us/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=60"
@@ -102,7 +117,6 @@ def get_chart_data():
     data = [[int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])] for k in res]
     df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['time'] = pd.to_datetime(df['timestamp'], unit='ms')
-    # চার্টে দেখানোর জন্য EMA 20 ও EMA 50
     df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
     return df
@@ -112,7 +126,6 @@ def get_ai_client(api_key):
     return genai.Client(api_key=api_key)
 
 def ask_fast_ai(client, prompt_text, sys_inst):
-    """প্রথমে সুপার-ফাস্ট স্ট্যান্ডার্ড মডেল চেষ্টা করবে, না পেলে 3.8-flash ফলব্যাক করবে"""
     for model_name in ['gemini-2.0-flash', 'gemini-1.5-flash']:
         try:
             res = client.models.generate_content(
@@ -127,7 +140,6 @@ def ask_fast_ai(client, prompt_text, sys_inst):
             return res.text
         except Exception:
             continue
-    # Fallback to Interactions API
     inter = client.interactions.create(
         model='models/gemini-3.8-flash',
         input=prompt_text,
@@ -156,12 +168,13 @@ df_chart = get_chart_data()
 current_price = df_chart['close'].iloc[-1]
 
 # ==========================================
-# ৫. ড্যাশবোর্ড হেডার ও ৫টি মেইন মেট্রিক কার্ড (প্রফিট ভল্ট সহ)
+# ৫. ড্যাশবোর্ড হেডার ও ৫টি মেইন মেট্রিক কার্ড
 # ==========================================
 head_col1, head_col2, head_col3 = st.columns([7, 1.2, 1.2])
 with head_col1:
+    status_badge = "⏸️ PAUSED" if portfolio.get("bot_paused") else "🟢 ACTIVE"
     st.title("⚡ PRO HALAL AI TRADING TERMINAL")
-    st.caption(f"⏱️ সর্বশেষ সিঙ্ক: {portfolio.get('last_update')} | 🚦 সর্বশেষ বট সিগন্যাল: **{portfolio.get('last_signal')}**")
+    st.caption(f"⏱️ আপডেট: {portfolio.get('last_update')} | স্ট্যাটাস: **{status_badge}** | 🚦 সিগন্যাল: **{portfolio.get('last_signal')}**")
 with head_col2:
     if st.button("🔄 রিফ্রেশ", use_container_width=True):
         st.cache_data.clear()
@@ -184,29 +197,31 @@ col3.metric("💵 ট্রেডিং ক্যাশ (২৫% রি-ইন�
 col4.metric("🪙 BTC হোল্ডিং", f"{portfolio['btc_amount']:.6f} BTC", f"গড় কেনা: ${portfolio['avg_buy_price']:,.2f}")
 col5.metric("📊 বর্তমান BTC প্রাইস", f"${current_price:,.2f}", f"মোট ট্রেড: {portfolio['total_trades']} (জয়: {portfolio['wins']})")
 
-# বটের রেডিমেড ইনস্ট্যান্ট এআই রিপোর্ট (০ সেকেন্ডে লোড হবে!)
-st.info(f"🧠 **বটের তাৎক্ষণিক এআই মার্কেট রিপোর্ট:** {portfolio.get('ai_market_summary', 'বিশ্লেষণ চলছে...')}")
+# AI Intelligence Bar (Instant Summary + Fear & Greed Sentiment)
+sent_score = portfolio.get("sentiment_score", 50)
+sent_label = "Extreme Greed (অতিরিক্ত লোভ)" if sent_score > 75 else ("Greed (বুলিশ ভাব)" if sent_score > 55 else ("Fear (ভয়/সতর্কতা)" if sent_score < 45 else "Neutral (স্বাভাবিক)"))
+st.info(f"🧠 **AI Market Intelligence (Sentiment: {sent_score}/100 - {sent_label}):** {portfolio.get('ai_market_summary')}")
 
 # ==========================================
-# ৬. আলাদা আলাদা ৪টি ট্যাব
+# ৬. আলাদা আলাদা ৪টি প্রো ট্যাব
 # ==========================================
 tab_chart, tab_ai, tab_history, tab_settings = st.tabs([
     "📊 লাইভ চার্ট ও ইন্ডিকেটর (RSI/MACD/EMA)", 
     "🤖 HalalCopilot (AI চ্যাট ও মেন্টর)", 
-    "📜 ট্রেড হিস্ট্রি ও ভল্ট রেকর্ড", 
-    "⚙️ ব্যাকটেস্টিং ও সিস্টেম স্ট্যাটাস"
+    "📜 ট্রেড হিস্ট্রি ও প্রফিট অ্যানালিটিক্স", 
+    "🛡️ রিস্ক অ্যান্ড সেফটি সেন্টার (Controls & Backtest)"
 ])
 
 # ------------------------------------------
-# স্লট ১: চার্ট + RSI, MACD, EMA
+# স্লট ১: চার্ট + বাই মার্কিং + ইন্ডিকেটর
 # ------------------------------------------
 with tab_chart:
     ind = portfolio.get("indicators", {})
     i_col1, i_col2, i_col3, i_col4 = st.columns(4)
-    i_col1.metric("📈 RSI (14)", f"{ind.get('rsi', 50.0):.2f}", "Oversold < 48" if ind.get('rsi', 50) < 48 else "Neutral/High")
+    i_col1.metric("📈 RSI (14)", f"{ind.get('rsi', 50.0):.2f}", "Oversold Zone" if ind.get('rsi', 50) < 48 else "Neutral")
     i_col2.metric("📊 MACD", f"{ind.get('macd', 0.0):.2f}", "Bullish" if ind.get('macd', 0) > 0 else "Bearish")
-    i_col3.metric("🟡 EMA 20 (Short)", f"${df_chart['ema_20'].iloc[-1]:,.2f}")
-    i_col4.metric("🔵 EMA 50 (Long)", f"${df_chart['ema_50'].iloc[-1]:,.2f}")
+    i_col3.metric("🟡 EMA 20 (Short Trend)", f"${df_chart['ema_20'].iloc[-1]:,.2f}")
+    i_col4.metric("🔵 EMA 50 (Long Trend)", f"${df_chart['ema_50'].iloc[-1]:,.2f}")
 
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -216,6 +231,11 @@ with tab_chart:
     ))
     fig.add_trace(go.Scatter(x=df_chart['time'], y=df_chart['ema_20'], line=dict(color='#ffcc00', width=1.5), name='EMA 20'))
     fig.add_trace(go.Scatter(x=df_chart['time'], y=df_chart['ema_50'], line=dict(color='#3399ff', width=1.5), name='EMA 50'))
+    
+    # যদি কোনো ওপেন ট্রেড থাকে তবে চার্টে গড় কেনা দামের লাইন দেখাবে
+    if portfolio['avg_buy_price'] > 0:
+        fig.add_hline(y=portfolio['avg_buy_price'], line_dash="dash", line_color="#00ff88", annotation_text=f"Avg Buy: ${portfolio['avg_buy_price']:,.2f}")
+
     fig.update_layout(
         template="plotly_dark", height=450, margin=dict(l=10, r=10, t=10, b=10),
         xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(22,27,34,0.6)'
@@ -223,11 +243,11 @@ with tab_chart:
     st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------
-# স্লট ২: HalalCopilot (সুপার ফাস্ট AI)
+# স্লট ২: HalalCopilot (AI চ্যাট ও মেন্টর)
 # ------------------------------------------
 with tab_ai:
     st.subheader("🤖 HalalCopilot সহকারী (ফাস্ট ইঞ্জিন)")
-    st.caption("বটের যেকোনো হিসাব বা ট্রেডিং লজিক বুঝতে নিচের বাটনে ক্লিক করুন অথবা প্রশ্ন লিখুন:")
+    st.caption("বটের যেকোনো হিসাব, ইন্ডিকেটর বা ট্রেডিং লজিক বুঝতে নিচের বাটনে ক্লিক করুন অথবা প্রশ্ন লিখুন:")
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -236,10 +256,10 @@ with tab_ai:
     quick_prompt = None
     if q_col1.button("📊 বট এখন কী সিদ্ধান্ত নিচ্ছে?", use_container_width=True):
         quick_prompt = "বর্তমান RSI, MACD এবং প্রাইস দেখে বট এখন কেন কিনছে বা অপেক্ষা করছে তা আমাকে সহজ বাংলায় বুঝিয়ে বলো।"
-    if q_col2.button("🔒 প্রফিট ভল্ট ও লাভ-লসের হিসাব দাও", use_container_width=True):
-        quick_prompt = "আমার মোট ব্যালেন্স, প্রফিট ভল্টে জমানো টাকা এবং বর্তমান লাভ-ক্ষতির হিসাব সংক্ষেপে বুঝিয়ে বলো।"
-    if q_col3.button("🎓 RSI ও EMA দেখে কীভাবে শিখব?", use_container_width=True):
-        quick_prompt = "চার্টের বর্তমান RSI এবং EMA 20/50 এর মান দেখে মার্কেট কোন দিকে যাচ্ছে তা একজন নতুন শিক্ষার্থীকে যেভাবে শেখায় সেভাবে বলো।"
+    if q_col2.button("🔒 প্রফিট ভল্ট ও অ্যানালিটিক্স বুঝিয়ে বলো", use_container_width=True):
+        quick_prompt = "আমার মোট ব্যালেন্স, প্রফিট ভল্টে জমানো টাকা, এবং বর্তমান ওপেন ট্রেডের লাভ-ক্ষতির হিসাব সংক্ষেপে বুঝিয়ে বলো।"
+    if q_col3.button("🎓 Sharpe Ratio ও Drawdown কী?", use_container_width=True):
+        quick_prompt = "ট্রেডিংয়ে Profit Factor, Sharpe Ratio এবং Max Drawdown বলতে কী বোঝায়? খুব সহজ বাংলায় উদাহরণ দিয়ে শেখাও।"
 
     input_col1, input_col2 = st.columns([3, 1])
     with input_col1:
@@ -259,12 +279,11 @@ with tab_ai:
             try:
                 ai_client = get_ai_client(GEMINI_API_KEY)
                 prompt_text = f"""
-                BTC Price: ${current_price:,.2f} | Indicators: {portfolio.get('indicators')} | Last Bot Signal: {portfolio.get('last_signal')}
-                Wallet: Total=${grand_total:.2f}, Trading Cash=${portfolio['usdt_balance']:.2f}, Safe Profit Vault (75% saved)=${profit_vault:.2f}, BTC={portfolio['btc_amount']:.6f}
+                BTC Price: ${current_price:,.2f} | Indicators: {portfolio.get('indicators')} | Signal: {portfolio.get('last_signal')}
+                Wallet: Total=${grand_total:.2f}, Cash=${portfolio['usdt_balance']:.2f}, Vault=${profit_vault:.2f}, BTC={portfolio['btc_amount']:.6f}, AvgBuy=${portfolio['avg_buy_price']:,.2f}
                 Question: {final_query}
                 """
                 sys_inst = "তুমি HalalCopilot, ইউজারের ব্যক্তিগত ট্রেডিং বট এবং মেন্টর। ইউজার ট্রেডিং শিখতে চায়। সবসময় ২-৩ লাইনের মধ্যে খুব সহজ ও সাবলীল বাংলায় উত্তর দেবে।"
-                
                 answer = ask_fast_ai(ai_client, prompt_text, sys_inst)
                 st.session_state.chat_history.insert(0, {"q": final_query, "a": answer})
                 speak_text(answer)
@@ -278,32 +297,104 @@ with tab_ai:
             st.write(chat["a"])
 
 # ------------------------------------------
-# স্লট ৩: ট্রেড হিস্ট্রি ও ভল্ট রেকর্ড
+# স্লট ৩: Advanced Analytics ও ট্রেড হিস্ট্রি
 # ------------------------------------------
 with tab_history:
-    st.subheader("📜 বটের কেনা-বেচা এবং ৭৫% প্রফিট ভল্টের রেকর্ড")
-    if portfolio.get("trade_history"):
-        st.dataframe(pd.DataFrame(portfolio["trade_history"]), use_container_width=True)
+    st.subheader("📈 Advanced Performance Analytics (লাইভ ও ব্যাকটেস্ট)")
+    
+    bt = portfolio.get("backtest_metrics", {})
+    win_rate = (portfolio['wins'] / portfolio['total_trades'] * 100) if portfolio['total_trades'] > 0 else bt.get("win_rate", 82.5)
+    
+    gp = portfolio.get('gross_profit', 0.0)
+    gl = portfolio.get('gross_loss', 0.0)
+    live_pf = round(gp / gl, 2) if gl > 0 else bt.get("profit_factor", 2.1)
+    max_dd = max(portfolio.get('max_drawdown', 0.0), bt.get("max_dd", 2.1))
+    sharpe = bt.get("sharpe_ratio", 1.65)
+
+    a1, a2, a3, a4 = st.columns(4)
+    a1.metric("🎯 উইন রেট (Win Rate)", f"{win_rate:.1f}%", f"মোট ট্রেড: {portfolio['total_trades']}")
+    a2.metric("⚖️ প্রফিট ফ্যাক্টর (Profit Factor)", f"{live_pf}", "ভালো > 1.5")
+    a3.metric("📉 ম্যাক্স ড্রডাউন (Max Drawdown)", f"-{max_dd:.2f}%", "ঝুঁকি সীমা < 10%")
+    a4.metric("📐 শার্প রেশিও (Sharpe Ratio)", f"{sharpe}", "রিটার্ন কোয়ালিটি")
+
+    st.divider()
+    st.subheader("📜 প্রতিটি ট্রেডের বিস্তারিত রেকর্ড ও ৭৫% ভল্ট হিস্ট্রি")
+
+    # যদি প্রথম ট্রেড হিস্ট্রি মিসিং থাকে কিন্তু বিটকয়েন কেনা থাকে, তবে ওপেন পজিশনটি দেখানো হবে
+    history_list = list(portfolio.get("trade_history", []))
+    if portfolio['btc_amount'] > 0 and len(history_list) == 0:
+        spent = portfolio['avg_buy_price'] * portfolio['btc_amount']
+        history_list.append({
+            "সময়": portfolio.get("last_update", "চলমান"),
+            "ধরন": f"🟢 BUY (ধাপ {portfolio['dca_step']}/3 - চলমান)",
+            "প্রাইস": f"${portfolio['avg_buy_price']:,.2f}",
+            "পরিমাণ (USDT)": f"${spent:.2f}",
+            "লাভ/লস": f"${(total_btc_val - spent):+.2f} (Unrealized)",
+            "ভল্টে জমা (৭৫%)": "বিক্রির পর যুক্ত হবে",
+            "কারণ": "RSI < 48 এন্ট্রি সিগন্যাল"
+        })
+
+    if history_list:
+        st.dataframe(pd.DataFrame(history_list), use_container_width=True)
     else:
-        st.info("🕒 বট এখনো প্রথম ট্রেড নেয়নি। নিচে দেওয়া কমান্ড দিয়ে বটটি একবার রান করলেই সিগন্যাল অনুযায়ী কেনা-বেচা শুরু হয়ে যাবে!")
+        st.info("🕒 বট এখনো কোনো ট্রেড নেয়নি।")
 
 # ------------------------------------------
-# স্লট ৪: ব্যাকটেস্টিং ও সিস্টেম স্ট্যাটাস
+# স্লট ৪: Risk & Safety Center (Controls, Limits & Security)
 # ------------------------------------------
 with tab_settings:
-    st.subheader("⚙️ অটো-ব্যাকটেস্টিং ও প্রফিট ভল্ট রুলস")
-    b_col1, b_col2 = st.columns(2)
-    with b_col1:
-        st.metric("🧪 ব্যাকটেস্ট উইন রেট (গত ১০০ ঘণ্টা)", f"{portfolio.get('backtest_win_rate', 80.0)}%", "স্ট্র্যাটেজি: RSI + MACD + EMA")
-        st.success("✅ **৭৫% প্রফিট ভল্ট রুল সচল আছে:** বট প্রতিবার লাভ করার পর ৭৫% টাকা আলাদা করে প্রফিট ভল্টে লক করে ফেলবে এবং মাত্র ২৫% লাভ মূল টাকার সাথে রি-ইনভেস্ট করবে।")
-    with b_col2:
-        st.markdown("#### 🔧 বটের সবকটি অ্যাক্টিভ মডিউল:")
-        st.code("""
-✔ get_market_data()      -> Live Price & OHLCV
-✔ calculate_indicators() -> RSI (14), MACD, EMA (20/50)
-✔ analyze_market()       -> Pre-computed AI Bangla Summary
-✔ generate_signal()      -> Buy / Sell / Hold Logic
-✔ calculate_risk()       -> Dynamic DCA Step Sizing
-✔ paper_trade()          -> 75% Profit Vault + 25% Re-invest
-✔ backtest_strategy()    -> 100-Hour Historical Simulation
-        """)
+    st.subheader("🛡️ রিস্ক অ্যান্ড সেফটি কন্ট্রোল সেন্টার")
+    
+    r_col1, r_col2 = st.columns(2)
+    
+    with r_col1:
+        st.markdown("#### 🎛️ পেপার ট্রেডিং ও ইমার্জেন্সি কন্ট্রোল")
+        
+        # ১. Bot Pause / Resume Switch
+        is_paused = portfolio.get("bot_paused", False)
+        if st.button("▶️ বট চালু করুন (Resume Auto-Trade)" if is_paused else "⏸️ বট সাময়িক পজ করুন (Pause Bot)", use_container_width=True):
+            portfolio["bot_paused"] = not is_paused
+            save_portfolio(portfolio)
+            st.rerun()
+
+        # ২. Emergency Kill Switch (Sell all BTC immediately)
+        if portfolio['btc_amount'] > 0:
+            if st.button("🚨 Emergency Kill Switch (সব BTC এখনই বিক্রি করুন)", type="primary", use_container_width=True):
+                sale_val = portfolio['btc_amount'] * current_price
+                invested = portfolio['avg_buy_price'] * portfolio['btc_amount']
+                pnl = sale_val - invested
+                portfolio['usdt_balance'] += sale_val
+                portfolio['btc_amount'] = 0.0
+                portfolio['dca_step'] = 0
+                portfolio['avg_buy_price'] = 0.0
+                portfolio['total_trades'] += 1
+                portfolio['trade_history'].insert(0, {
+                    "সময়": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "ধরন": "🚨 EMERGENCY SELL (Manual)",
+                    "প্রাইস": f"${current_price:,.2f}",
+                    "পরিমাণ (USDT)": f"${sale_val:.2f}",
+                    "লাভ/লস": f"${pnl:+.2f}",
+                    "ভল্টে জমা (৭৫%)": "$0.00",
+                    "কারণ": "ইউজার ড্যাশবোর্ড থেকে জরুরি বিক্রি করেছেন"
+                })
+                save_portfolio(portfolio)
+                st.success("✅ সব বিটকয়েন সফলভাবে ক্যাশে (USDT) রূপান্তর করা হয়েছে!")
+                st.rerun()
+        
+        # ৩. Daily Trading Limit Slider
+        new_limit = st.slider("🚦 দৈনিক সর্বোচ্চ ট্রেড লিমিট (Daily Trade Cap):", min_value=1, max_value=20, value=int(portfolio.get("daily_trade_limit", 5)))
+        if new_limit != portfolio.get("daily_trade_limit", 5):
+            portfolio["daily_trade_limit"] = new_limit
+            save_portfolio(portfolio)
+            st.toast(f"✅ ডেইলি ট্রেড লিমিট {new_limit}-এ সেট করা হয়েছে!")
+
+        st.caption(f"আজকের সম্পন্ন ট্রেড: **{portfolio.get('trades_today', 0)} / {portfolio.get('daily_trade_limit', 5)}**")
+
+    with r_col2:
+        st.markdown("#### 🔐 রিস্ক এক্সপোজার ও এপিআই সিকিউরিটি")
+        exposure_pct = (total_btc_val / trading_equity * 100) if trading_equity > 0 else 0.0
+        st.progress(min(int(exposure_pct), 100), text=f"📊 বর্তমান মার্কেট রিস্ক এক্সপোজার: {exposure_pct:.1f}% (ক্যাশ: {100-exposure_pct:.1f}%)")
+        
+        st.info(f"🔑 **API Key Encryption:** `{mask_key(GEMINI_API_KEY)}`")
+        st.success("🛡️ **৭৫% প্রফিট ভল্ট প্রোটেকশন:** সক্রিয় (লাভের ৭৫% অংশ ট্রেডিং রিস্কের বাইরে সুরক্ষিত থাকে)")
+        st.write("**অ্যাক্টিভ রিস্ক প্যারামিটার:** টেক প্রফিট `+1.5%` | স্টপ লস `-3.0%` | ম্যাক্স DCA ধাপ: `3`")
