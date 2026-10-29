@@ -13,39 +13,63 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# ১. পেজ কনফিগারেশন এবং ক্লিন UI (বিগিনার ফ্রেন্ডলি)
+# ১. পেজ কনফিগারেশন ও মডার্ন CSS ডিজাইন
 # ==========================================
-st.set_page_config(page_title="Halal AI Bot & Mentor", layout="wide", page_icon="🤖")
+st.set_page_config(page_title="Pro Halal AI Trading Terminal", layout="wide", page_icon="⚡")
 
 st.markdown("""
 <style>
+    /* মেট্রিক কার্ডগুলোর মডার্ন ডিজাইন */
     div[data-testid="metric-container"] {
         background: linear-gradient(145deg, #161b22, #0d1117);
-        border-left: 4px solid #3399ff;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 4px 15px rgba(51, 153, 255, 0.1);
+        border: 1px solid #30363d;
+        padding: 16px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     }
-    .bot-title { font-size: 24px; font-weight: bold; color: #3399ff; }
+    /* ট্যাবগুলোর (Slots) মডার্ন বাটন ডিজাইন */
+    button[data-baseweb="tab"] {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        padding: 10px 20px !important;
+        border-radius: 8px 8px 0px 0px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# ২. সিক্রেট কি এবং পিন লোড করা
+# ২. সিক্রেট কি (API Key) এবং পিন লোড করা
 # ==========================================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or (st.secrets["GEMINI_API_KEY"] if "GEMINI_API_KEY" in st.secrets else None)
-DASHBOARD_PIN = os.getenv("DASHBOARD_PIN") or (st.secrets["DASHBOARD_PIN"] if "DASHBOARD_PIN" in st.secrets else "6251")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    try:
+        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        GEMINI_API_KEY = None
+
+DASHBOARD_PIN = os.getenv("DASHBOARD_PIN")
+if not DASHBOARD_PIN:
+    try:
+        DASHBOARD_PIN = st.secrets["DASHBOARD_PIN"]
+    except Exception:
+        DASHBOARD_PIN = "6251"
+
 PORTFOLIO_FILE = "paper_portfolio.json"
 
+# ==========================================
+# ৩. সিকিউরিটি লক স্ক্রিন (PIN Checkpoint)
+# ==========================================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    st.markdown("<br><br><h2 style='text-align: center; color: #3399ff;'>🔒 বট কন্ট্রোল প্যানেল</h2>", unsafe_allow_html=True)
+    st.markdown("<br><br><h2 style='text-align: center;'>🔒 সিকিউরিটি চেকপয়েন্ট</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #8b949e;'>আপনার প্রাইভেট হালাল ট্রেডিং টার্মিনালে প্রবেশ করতে গোপন পিন দিন:</p>", unsafe_allow_html=True)
+    
     col_a, col_b, col_c = st.columns([1, 1.2, 1])
     with col_b:
-        entered_pin = st.text_input("বট মাস্টার পিন (PIN):", type="password", placeholder="পিন দিন...")
-        if st.button("ড্যাশবোর্ড আনলক করুন 🔓", use_container_width=True):
+        entered_pin = st.text_input("গোপন পিন (PIN):", type="password", placeholder="এখানে পিন লিখুন...")
+        if st.button("আনলক করুন 🔓", use_container_width=True):
             if entered_pin == str(DASHBOARD_PIN).strip():
                 st.session_state.authenticated = True
                 st.rerun()
@@ -54,7 +78,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# ৩. ফাস্ট ডেটা লোডিং এবং ক্যাশ
+# ৪. ফাস্ট ডেটা ও চার্ট লোডিং ফাংশন (Cached)
 # ==========================================
 def load_portfolio():
     if os.path.exists(PORTFOLIO_FILE):
@@ -64,8 +88,14 @@ def load_portfolio():
         except Exception:
             pass
     return {
-        "usdt_balance": 100.0, "btc_amount": 0.0, "avg_buy_price": 0.0,
-        "dca_step": 0, "total_trades": 0, "wins": 0, "trade_history": []
+        "usdt_balance": 100.0,
+        "btc_amount": 0.0,
+        "avg_buy_price": 0.0,
+        "dca_step": 0,
+        "total_trades": 0,
+        "wins": 0,
+        "trade_history": [],
+        "last_update": "এখনো সিঙ্ক হয়নি"
     }
 
 @st.cache_data(ttl=60)
@@ -77,84 +107,213 @@ def get_chart_data():
     df['time'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
 
+@st.cache_resource
+def get_ai_client(api_key):
+    return genai.Client(api_key=api_key)
+
+def speak_text(text):
+    clean_text = text.replace('"', '').replace("'", "").replace('\n', ' ')
+    js_code = f"""
+    <script>
+        if ('speechSynthesis' in window) {{
+            window.speechSynthesis.cancel();
+            var utterance = new SpeechSynthesisUtterance("{clean_text}");
+            utterance.lang = 'bn-BD';
+            utterance.rate = 1.05;
+            window.speechSynthesis.speak(utterance);
+        }}
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+
+portfolio = load_portfolio()
 df_chart = get_chart_data()
 current_price = df_chart['close'].iloc[-1]
-portfolio = load_portfolio()
 
 # ==========================================
-# ৪. হেডার ও অটো-ট্রেড মেট্রিক্স
+# ৫. ড্যাশবোর্ড হেডার ও কুইক অ্যাকশন বার
 # ==========================================
-st.markdown('<p class="bot-title">🤖 হালাল অটো-ট্রেডিং বট এবং মেন্টর</p>', unsafe_allow_html=True)
-st.caption("বট নিজেই মার্কেট অ্যানালাইসিস করে ট্রেড করবে, আপনি শুধু ড্যাশবোর্ড থেকে মনিটর করবেন এবং শিখবেন।")
+head_col1, head_col2, head_col3 = st.columns([7, 1.2, 1.2])
+with head_col1:
+    st.title("⚡ PRO HALAL AI TRADING TERMINAL")
+    st.caption(f"⏱️ সর্বশেষ আপডেট: {portfolio.get('last_update', 'N/A')} | 🛡️ মোড: 100% Spot Halal (No Margin/Interest)")
+with head_col2:
+    if st.button("🔄 রিফ্রেশ", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+with head_col3:
+    if st.button("🔒 লক করুন", use_container_width=True):
+        st.session_state.authenticated = False
+        st.rerun()
 
 total_btc_val = portfolio['btc_amount'] * current_price
 total_equity = portfolio['usdt_balance'] + total_btc_val
 profit_loss = total_equity - 100.0
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("💼 মোট ব্যালেন্স", f"${total_equity:,.2f}", f"প্রফিট: {profit_loss:+.2f} USDT")
-col2.metric("💵 ক্যাশ (USDT)", f"${portfolio['usdt_balance']:,.2f}", f"DCA ধাপ: {portfolio['dca_step']}/3")
-col3.metric("🪙 বটের BTC হোল্ডিং", f"{portfolio['btc_amount']:.5f} BTC", f"গড় কেনা: ${portfolio['avg_buy_price']:,.2f}")
-col4.metric("📊 লাইভ মার্কেট", f"${current_price:,.2f}", "অটো-ট্রেড অ্যাক্টিভ 🟢")
+col1.metric("💼 মোট পোর্টফোলিও ভ্যালু", f"${total_equity:,.2f}", f"{profit_loss:+.2f} USDT")
+col2.metric("💵 ক্যাশ ব্যালেন্স (USDT)", f"${portfolio['usdt_balance']:,.2f}", f"DCA ধাপ: {portfolio['dca_step']}/3")
+col3.metric("🪙 বিটকয়েন হোল্ডিং (BTC)", f"{portfolio['btc_amount']:.6f} BTC", f"গড় কেনা দাম: ${portfolio['avg_buy_price']:,.2f}")
+col4.metric("📊 বর্তমান BTC প্রাইস", f"${current_price:,.2f}", f"মোট ট্রেড: {portfolio['total_trades']} (জয়: {portfolio['wins']})")
 
 st.write("")
 
 # ==========================================
-# ৫. ড্যাশবোর্ড ট্যাব (Learning Focus)
+# ৬. আলাদা আলাদা স্লট / ট্যাব
 # ==========================================
-tab_ai, tab_chart, tab_history = st.tabs(["🎓 HalalCopilot (বটের থেকে শিখুন)", "📈 বটের লাইভ মার্কেট ভিউ", "📜 বটের অ্যাকশন হিস্ট্রি"])
+tab_chart, tab_ai, tab_history, tab_settings = st.tabs([
+    "📊 ওভারভিউ ও লাইভ চার্ট", 
+    "🤖 HalalCopilot (AI চ্যাট)", 
+    "📜 ট্রেড হিস্ট্রি", 
+    "⚙️ সিস্টেম ও স্ট্র্যাটেজি"
+])
 
-# --- ট্যাব ১: এআই মেন্টর (Learning Hub) ---
-with tab_ai:
-    st.subheader("🎓 HalalCopilot - আপনার ট্রেডিং মেন্টর")
-    st.caption("বটের বর্তমান অ্যাকশন বা মার্কেটের অবস্থা নিয়ে যেকোনো প্রশ্ন করুন। এআই আপনাকে সহজ ভাষায় শিখিয়ে দেবে।")
-    
-    q_col1, q_col2, q_col3 = st.columns(3)
-    quick_query = None
-    if q_col1.button("🤔 মার্কেট এখন আপ নাকি ডাউন?", use_container_width=True):
-        quick_query = "মার্কেট এখন কোন দিকে যাচ্ছে? সহজ করে বুঝিয়ে বলো যাতে আমি ট্রেডিং শিখতে পারি।"
-    if q_col2.button("💡 বট এখন কী করবে?", use_container_width=True):
-        quick_query = "আমার পোর্টফোলিও এবং বর্তমান প্রাইস দেখে বলো, বট কি এখন বাই করবে নাকি ওয়েট করবে? কেন করবে তার লজিক বোঝাও।"
-    if q_col3.button("📊 DCA স্ট্র্যাটেজি কী?", use_container_width=True):
-        quick_query = "আমার বট যে DCA স্ট্র্যাটেজি ব্যবহার করে, সেটি আসলে কী? আমি কীভাবে এটি থেকে লাভ করব সহজ বাংলায় বোঝাও।"
-
-    user_query = st.text_input("আপনি নিজে থেকে কিছু শিখতে চাইলে এখানে লিখুন:")
-    final_query = quick_query if quick_query else user_query
-
-    if st.button("বটকে জিজ্ঞেস করুন 🚀") or final_query:
-        if final_query:
-            with st.spinner("HalalCopilot আপনার জন্য উত্তর তৈরি করছে..."):
-                try:
-                    ai_client = genai.Client(api_key=GEMINI_API_KEY)
-                    prompt_text = f"""
-                    লাইভ BTC প্রাইস: ${current_price:,.2f}
-                    বটের পোর্টফোলিও: টোটাল ${total_equity:,.2f}, ক্যাশ ${portfolio['usdt_balance']:,.2f}, BTC {portfolio['btc_amount']}
-                    ইউজারের প্রশ্ন: {final_query}
-                    """
-                    interaction = ai_client.interactions.create(
-                        model='models/gemini-3.8-flash',
-                        input=prompt_text,
-                        system_instruction="তুমি HalalCopilot, একজন ফ্রেন্ডলি 'ট্রেডিং টিচার' বা মেন্টর। ইউজার ট্রেডিং শিখতে চায় এবং বট দিয়ে অটো-ট্রেড করায়। তুমি ইউজারকে খুব সহজ বাংলায় (২-৪ লাইনে) মার্কেটের অবস্থা এবং বটের লজিক বুঝিয়ে দেবে। কোনো কঠিন কথা বলবে না, একদম বিগিনারদের মতো করে শেখাবে।",
-                    )
-                    st.success(interaction.steps[-1])
-                except Exception as e:
-                    st.error(f"এপিআই সমস্যা: {e}")
-
-# --- ট্যাব ২: ক্লিন মার্কেট ভিউ ---
+# ------------------------------------------
+# স্লট ১: লাইভ মার্কেট চার্ট এবং মার্কেট সামারি
+# ------------------------------------------
 with tab_chart:
-    st.subheader("📈 বট যে চার্ট দেখে অ্যানালাইজ করছে (১ ঘণ্টার টাইমফ্রেম)")
+    st.subheader("🕯️ BTC/USDT লাইভ ক্যান্ডেলস্টিক চার্ট (1H)")
     fig = go.Figure(data=[go.Candlestick(
-        x=df_chart['time'], open=df_chart['open'], high=df_chart['high'],
-        low=df_chart['low'], close=df_chart['close'],
-        increasing_line_color='#00ff88', decreasing_line_color='#ff3366'
+        x=df_chart['time'],
+        open=df_chart['open'],
+        high=df_chart['high'],
+        low=df_chart['low'],
+        close=df_chart['close'],
+        increasing_line_color='#00ff88',
+        decreasing_line_color='#ff3366'
     )])
-    fig.update_layout(template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
+    fig.update_layout(
+        template="plotly_dark", 
+        height=460, 
+        margin=dict(l=10, r=10, t=10, b=10), 
+        xaxis_rangeslider_visible=False,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(22,27,34,0.6)'
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-# --- ট্যাব ৩: বটের অ্যাকশন হিস্ট্রি ---
+    c1, c2, c3 = st.columns(3)
+    c1.info(f"📈 **গত ৬০ ঘণ্টার সর্বোচ্চ দাম:** ${df_chart['high'].max():,.2f}")
+    c2.warning(f"📉 **গত ৬০ ঘণ্টার সর্বনিম্ন দাম:** ${df_chart['low'].min():,.2f}")
+    price_change = current_price - df_chart['open'].iloc[0]
+    c3.success(f"⚡ **৬০ ঘণ্টায় প্রাইস পরিবর্তন:** ${price_change:+,.2f}")
+
+# ------------------------------------------
+# স্লট ২: HalalCopilot (AI চ্যাট ও ভয়েস)
+# ------------------------------------------
+with tab_ai:
+    st.subheader("🤖 HalalCopilot সহকারী")
+    st.caption("আপনার পোর্টফোলিও এবং লাইভ মার্কেট সম্পর্কে যেকোনো প্রশ্ন করুন অথবা কুইক বাটন চাপুন:")
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    q_col1, q_col2, q_col3 = st.columns(3)
+    quick_prompt = None
+    if q_col1.button("📊 এখন মার্কেটের অবস্থা কেমন?", use_container_width=True):
+        quick_prompt = "এখন বিটকয়েনের মার্কেট প্রাইস ও চার্টের অবস্থা কেমন? সংক্ষেপে বলো।"
+    if q_col2.button("💼 আমার পোর্টফোলিও বিশ্লেষণ করো", use_container_width=True):
+        quick_prompt = "আমার বর্তমান ব্যালেন্স, বিটকয়েন হোল্ডিং এবং লাভ-ক্ষতির অবস্থা বিশ্লেষণ করে বলো।"
+    if q_col3.button("💡 এখন কি কেনা উচিত?", use_container_width=True):
+        quick_prompt = "আমার গড় কেনা দাম এবং বর্তমান বিটকয়েন প্রাইস অনুযায়ী এখন কি নতুন করে কেনা ঠিক হবে নাকি অপেক্ষা করব?"
+
+    st.divider()
+
+    input_col1, input_col2 = st.columns([3, 1])
+    with input_col1:
+        user_query = st.text_input("আপনার প্রশ্ন লিখুন:", placeholder="যেমন: আমার কত লাভ বা লস চলছে?")
+    with input_col2:
+        st.write("ভয়েস কমান্ড:")
+        audio_data = mic_recorder(start_prompt="🎙️ কথা বলুন", stop_prompt="⏹️ থামুন", key='mic')
+
+    ask_btn = st.button("জিজ্ঞেস করুন 🚀", type="primary", use_container_width=True)
+
+    final_query = None
+    if quick_prompt:
+        final_query = quick_prompt
+    elif audio_data:
+        st.toast("🎙️ ভয়েস কমান্ড গ্রহণ করা হয়েছে!")
+        final_query = "মার্কেটের বর্তমান অবস্থা এবং আমার পোর্টফোলিও বিশ্লেষণ করে সংক্ষেপে বলুন।"
+    elif ask_btn:
+        final_query = user_query if user_query else "মার্কেট এবং আমার পোর্টফোলিওর কী অবস্থা বলো।"
+
+    if final_query:
+        with st.spinner("⚡ HalalCopilot উত্তর তৈরি করছে..."):
+            try:
+                ai_client = get_ai_client(GEMINI_API_KEY)
+                
+                prompt_text = f"""
+                বর্তমান BTC প্রাইস: ${current_price:,.2f}
+                ইউজারের পোর্টফোলিও: মোট ইক্যুইটি ${total_equity:,.2f}, ক্যাশ ${portfolio['usdt_balance']:,.2f}, BTC {portfolio['btc_amount']:.6f}, গড় কেনা দাম ${portfolio['avg_buy_price']:,.2f}, DCA ধাপ {portfolio['dca_step']}/3।
+                ইউজারের প্রশ্ন: {final_query}
+                """
+                
+                interaction = ai_client.interactions.create(
+                    model='models/gemini-3.8-flash',
+                    input=prompt_text,
+                    system_instruction="তুমি HalalCopilot, একজন বন্ধুসুলভ ও প্রফেশনাল ট্রেডিং সহকারী। ইউজারের সাথে বাংলায় খুব সাবলীল ও স্বাভাবিক মানুষের মতো কথা বলবে। উত্তর সবসময় সংক্ষেপে (২ থেকে ৪ লাইনের মধ্যে) এবং টু-দ্য-পয়েন্টে দেবে যাতে দ্রুত পড়া ও শোনা যায়।",
+                    generation_config={
+                        'max_output_tokens': 300,
+                        'temperature': 0.7,
+                    }
+                )
+                
+                answer = interaction.steps[-1]
+                st.session_state.chat_history.insert(0, {"q": final_query, "a": answer})
+                speak_text(answer)
+                
+            except Exception as e:
+                st.error(f"কানেকশন সমস্যা: {e}")
+
+    if st.session_state.chat_history:
+        st.markdown("#### 💬 কথোপকথন:")
+        for chat in st.session_state.chat_history[:5]:
+            with st.chat_message("user"):
+                st.write(chat["q"])
+            with st.chat_message("assistant"):
+                st.write(chat["a"])
+
+# ------------------------------------------
+# স্লট ৩: ট্রেড হিস্ট্রি
+# ------------------------------------------
 with tab_history:
-    st.subheader("📜 বট কবে কী কিনেছে বা বেচেছে")
+    st.subheader("📜 বটের বাই-সেল রেকর্ড ও পারফরম্যান্স")
+    
+    win_rate = (portfolio['wins'] / portfolio['total_trades'] * 100) if portfolio['total_trades'] > 0 else 0.0
+    h_col1, h_col2, h_col3 = st.columns(3)
+    h_col1.metric("🎯 উইন রেট (Win Rate)", f"{win_rate:.1f}%")
+    h_col2.metric("🔄 মোট সম্পন্ন ট্রেড", f"{portfolio['total_trades']} টি")
+    h_col3.metric("✅ সফল প্রফিট ট্রেড", f"{portfolio['wins']} টি")
+    
+    st.divider()
+    
     if portfolio.get("trade_history"):
-        st.dataframe(pd.DataFrame(portfolio["trade_history"]), use_container_width=True)
+        df_history = pd.DataFrame(portfolio["trade_history"])
+        st.dataframe(df_history, use_container_width=True)
     else:
-        st.info("🕒 বট এখনো কোনো ট্রেড নেয়নি। মার্কেটে সঠিক লজিক ম্যাচ করলেই এখানে অটোমেটিক রেকর্ড চলে আসবে এবং আপনি দেখে শিখতে পারবেন।")
+        st.info("🕒 বট এখনো কোনো কয়েন কেনা-বেচা করেনি। মার্কেটে সঠিক সিগন্যাল পেলে এখানে অটোমেটিক রেকর্ড চলে আসবে।")
+
+# ------------------------------------------
+# স্লট ৪: সিস্টেম ও স্ট্র্যাটেজি
+# ------------------------------------------
+with tab_settings:
+    st.subheader("⚙️ সিস্টেম ডায়াগনস্টিক ও স্ট্র্যাটেজি কনফিগারেশন")
+    
+    s_col1, s_col2 = st.columns(2)
+    with s_col1:
+        st.markdown("#### 🔌 কানেকশন স্ট্যাটাস")
+        if GEMINI_API_KEY and GEMINI_API_KEY.startswith("AIza"):
+            st.success(f"✅ **Gemini API সচল আছে** (Key: `{GEMINI_API_KEY[:6]}...`)")
+        else:
+            st.warning(f"⚠️ **API Key চেক করুন**")
+            
+        st.info("📡 **মার্কেট ডেটা সোর্স:** Binance US Spot API (1H Candlesticks)")
+        st.info(f"📁 **পোর্টফোলিও ফাইল:** `{PORTFOLIO_FILE}`")
+
+    with s_col2:
+        st.markdown("#### 🛡️ হালাল ট্রেডিং শর্তাবলি ও স্ট্র্যাটেজি")
+        st.markdown("""
+        * **১০০% স্পট ট্রেডিং:** কোনো প্রকার লিভারেজ বা সুদ নেই।
+        * **স্মার্ট DCA (৩ ধাপ):** মার্কেট নিচে নামলে ৩ ধাপে গড় করে কেনা হয়।
+        * **ক্যান্ডেলস্টিক ও লিকুইডিটি সুইপ:** সঠিক কনফার্মেশন ছাড়া বট এন্ট্রি নেয় না।
+        """)
