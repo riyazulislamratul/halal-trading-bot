@@ -9,13 +9,26 @@ from streamlit_mic_recorder import mic_recorder
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
-# ==========================================
-# ০. গোপন সিন্দুক (.env) লোড করা ও সিকিউরিটি লক
-# ==========================================
 load_dotenv()
 
+# ১. Streamlit পেজ কনফিগারেশন সবসময় সবার ওপরে থাকতে হয়
+st.set_page_config(page_title="Pro Halal AI Trading Terminal", layout="wide", page_icon="🔒")
+
+# ২. আগে লোকাল .env থেকে খুঁজবে, না পেলে Streamlit Cloud-এর Secrets থেকে নেবে
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DASHBOARD_PIN = os.getenv("DASHBOARD_PIN", "123456") # ডিফল্ট পিন যদি .env না পায়
+if not GEMINI_API_KEY:
+    try:
+        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        GEMINI_API_KEY = None
+
+DASHBOARD_PIN = os.getenv("DASHBOARD_PIN")
+if not DASHBOARD_PIN:
+    try:
+        DASHBOARD_PIN = st.secrets["DASHBOARD_PIN"]
+    except Exception:
+        DASHBOARD_PIN = "6251"  # ডিফল্ট পিন যদি কোথাও না পায়
+
 PORTFOLIO_FILE = "paper_portfolio.json"
 
 st.set_page_config(page_title="Pro Halal AI Trading Terminal", layout="wide", page_icon="🔒")
