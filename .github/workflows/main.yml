@@ -1,0 +1,34 @@
+name: 24/7 Halal AI Trading Bot
+
+on:
+  schedule:
+    - cron: '0 * * * *'      # প্রতি ১ ঘণ্টা পর পর অটোমেটিক রান করবে
+  workflow_dispatch:         # বাটন চেপে ম্যানুয়ালি টেস্ট করার জন্য
+
+permissions:
+  contents: write            # ওয়ালেট ফাইল আপডেট করার অনুমতি
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Download Bot Code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Trading Libraries
+        run: pip install ccxt pandas requests google-genai
+
+      - name: 🤖 Run Halal AI Bot Cycle
+        run: python bot.py --once
+
+      - name: 💾 Save Updated Wallet Balance
+        run: |
+          git config --global user.name "HalalBot-Cloud"
+          git config --global user.email "bot@users.noreply.github.com"
+          git add paper_portfolio.json
+          git diff --staged --quiet || (git commit -m "📊 Auto-updated wallet balance" && git pull --rebase && git push)
