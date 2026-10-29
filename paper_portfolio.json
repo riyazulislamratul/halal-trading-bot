@@ -7,14 +7,14 @@
     "wins": 0,
     "profit_vault": 0.0,
     "trade_history": [],
-    "ai_market_summary": "মার্কেট এখন DOWNTREND (বিয়ারিশ)-এ আছে। বর্তমান RSI 47.0 এবং MACD -148.89। বট নিয়ম অনুযায়ী ট্রেড করছে।",
-    "last_signal": "HOLD (সঠিক সিগন্যালের অপেক্ষায় (RSI: 47.0))",
+    "ai_market_summary": "মার্কেট এখন DOWNTREND (বিয়ারিশ)-এ আছে। বর্তমান RSI 47.1 এবং MACD -147.52। বট নিয়ম অনুযায়ী ট্রেড করছে।",
+    "last_signal": "HOLD (সঠিক সিগন্যালের অপেক্ষায় (RSI: 47.1))",
     "indicators": {
-        "rsi": 46.96,
-        "macd": -148.89,
-        "ema_20": 80430.63,
-        "ema_50": 80540.98
+        "rsi": 47.11,
+        "macd": -147.52,
+        "ema_20": 80432.26,
+        "ema_50": 80541.65
     },
     "backtest_win_rate": 100.0,
-    "last_update": "2026-10-30 03:24:24"
+    "last_update": "2026-10-30 03:33:32"
 }
