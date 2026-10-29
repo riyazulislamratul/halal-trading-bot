@@ -245,7 +245,7 @@ with tab_ai:
         final_query = user_query if user_query else "মার্কেট এবং আমার পোর্টফোলিওর কী অবস্থা বলো।"
 
     if final_query:
-        with st.spinner("⚡ HalalCopilot উত্তর তৈরি করছে (১-২ সেকেন্ড)..."):
+        with st.spinner("⚡ HalalCopilot উত্তর তৈরি করছে..."):
             try:
                 ai_client = get_ai_client(GEMINI_API_KEY)
                 
@@ -255,18 +255,19 @@ with tab_ai:
                 ইউজারের প্রশ্ন: {final_query}
                 """
                 
-                # সুপার ফাস্ট স্ট্যান্ডার্ড মেথড (gemini-2.5-flash)
-                response = ai_client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt_text,
-                    config=types.GenerateContentConfig(
-                        system_instruction="তুমি HalalCopilot, একজন বন্ধুসুলভ ও প্রফেশনাল ট্রেডিং সহকারী। ইউজারের সাথে বাংলায় খুব সাবলীল ও স্বাভাবিক মানুষের মতো কথা বলবে। উত্তর সবসময় সংক্ষেপে (২ থেকে ৪ লাইনের মধ্যে) এবং টু-দ্য-পয়েন্টে দেবে যাতে দ্রুত পড়া ও শোনা যায়।",
-                        max_output_tokens=300,
-                        temperature=0.7,
-                    )
+                # আপডেট করা Gemini 3.8 Flash ও Interactions API (অফিসিয়াল রিকোয়ারমেন্ট)
+                interaction = ai_client.interactions.create(
+                    model='models/gemini-3.8-flash',
+                    input=prompt_text,
+                    system_instruction="তুমি HalalCopilot, একজন বন্ধুসুলভ ও প্রফেশনাল ট্রেডিং সহকারী। ইউজারের সাথে বাংলায় খুব সাবলীল ও স্বাভাবিক মানুষের মতো কথা বলবে। উত্তর সবসময় সংক্ষেপে (২ থেকে ৪ লাইনের মধ্যে) এবং টু-দ্য-পয়েন্টে দেবে যাতে দ্রুত পড়া ও শোনা যায়।",
+                    generation_config={
+                        'max_output_tokens': 300,
+                        'temperature': 0.7,
+                    }
                 )
                 
-                answer = response.text
+                answer = interaction.steps[-1]
+                
                 # চ্যাট হিস্ট্রিতে সেভ করা
                 st.session_state.chat_history.insert(0, {"q": final_query, "a": answer})
                 speak_text(answer)
