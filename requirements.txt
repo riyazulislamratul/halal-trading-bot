@@ -1,0 +1,8 @@
+streamlit
+pandas
+requests
+plotly
+google-genai
+streamlit-mic-recorder
+python-dotenv
+ccxt
