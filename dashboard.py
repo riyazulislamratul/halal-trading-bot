@@ -410,18 +410,23 @@ if selected_page == "📊 প্রো মাল্টি-ইন্ডিকে�
             unrealized_pnl = total_btc_val - invested
             pnl_pct = ((current_price - portfolio['avg_buy_price']) / portfolio['avg_buy_price']) * 100
             pos_df = pd.DataFrame([{
-                "Pair": "BTC/USDT (Spot)",
-                "DCA Step": f"{portfolio['dca_step']} / 3",
-                "Size (BTC)": f"{portfolio['btc_amount']:.6f}",
-                "Avg Entry Price": f"${portfolio['avg_buy_price']:,.2f}",
-                "Mark Price": f"${current_price:,.2f}",
-                "Take Profit (+1.5%)": f"${portfolio['avg_buy_price']*1.015:,.2f}",
-                "Stop Loss (-3.0%)": f"${portfolio['avg_buy_price']*0.97:,.2f}",
-                "Unrealized P/L": f"${unrealized_pnl:+.2f} ({pnl_pct:+.2f}%)"
+                "Pair (কয়েন পেয়ার)": "BTC/USDT (Spot)",
+                "DCA Step (ধাপ)": f"{portfolio['dca_step']} / 3",
+                "Size (বিটকয়েনের পরিমাণ)": f"{portfolio['btc_amount']:.6f} BTC",
+                "Avg Entry Price (গড় কেনা দাম)": f"${portfolio['avg_buy_price']:,.2f}",
+                "Mark Price (বর্তমান বাজার দর)": f"${current_price:,.2f}",
+                "Take Profit (লাভে বিক্রির টার্গেট +1.5%)": f"${portfolio['avg_buy_price']*1.015:,.2f}",
+                "Stop Loss (লস লিমিট -3.0%)": f"${portfolio['avg_buy_price']*0.97:,.2f}",
+                "Unrealized P/L (চলমান লাভ/লস)": f"${unrealized_pnl:+.2f} ({pnl_pct:+.2f}%)"
             }])
             st.dataframe(pos_df, use_container_width=True)
+            st.caption(
+                f"💡 **সহজ বাংলায় আপনার চলমান ট্রেডের হিসাব:** বট **${portfolio['avg_buy_price']:,.2f}** দামে বিটকয়েন কিনেছে। "
+                f"এখন বাজার দর **${current_price:,.2f}** হওয়ায় আপনার চলমান লাভ/লস **{unrealized_pnl:+.2f} USDT ({pnl_pct:+.2f}%)**। "
+                f"দাম বেড়ে **${portfolio['avg_buy_price']*1.015:,.2f}** হলে বট অটোমেটিক লাভে বিক্রি করবে।"
+            )
         else:
-            st.info("বর্তমানে কোনো ওপেন পজিশন নেই। বট ১০০% ক্যাশ (USDT) নিয়ে পরবর্তী এন্ট্রি সিগন্যালের অপেক্ষায় আছে।")
+            st.info("বর্তমানে কোনো ওপেন পজিশন (চলমান ট্রেড) নেই। বট ১০০% ক্যাশ (USDT) নিয়ে পরবর্তী এন্ট্রি সিগন্যালের অপেক্ষায় আছে।")
 
     with b_tab2:
         st.write(f"• **পরবর্তী Buy শর্ত:** RSI < 48.0 (বর্তমান: `{last['rsi']:.1f}`) এবং মার্কেট স্ট্যাটাস `SAFE` হতে হবে।")
