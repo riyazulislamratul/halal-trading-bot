@@ -9,9 +9,11 @@ import os
 import sys
 from datetime import datetime
 from google import genai
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # ==========================================
 # ১. কনফিগারেশন ও সিকিউরিটি
