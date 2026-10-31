@@ -7,6 +7,7 @@ import time
 import json
 import os
 import sys
+from pro_features import analyze_pro_roadmap, update_periodic_report
 from datetime import datetime
 from google import genai
 try:
@@ -376,6 +377,10 @@ def start_bot(once=False):
             portfolio["last_signal"] = f"{signal} ({reason})"
 
             portfolio = paper_trade(signal, reason, price, portfolio)
+            # নতুন Pro Roadmap এবং ৪ ঘণ্টার অটো-রিপোর্ট আপডেট
+            portfolio["roadmap_data"] = analyze_pro_roadmap(df, portfolio, price)
+            portfolio = update_periodic_report(portfolio, price, signal, reason, interval_hours=4)
+            
             save_portfolio(portfolio)
             show_dashboard(portfolio, price, signal, reason)
 
